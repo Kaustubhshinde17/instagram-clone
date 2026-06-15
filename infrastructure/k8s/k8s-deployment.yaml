@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextgen-config
+  namespace: instagram
+data:
+  REDIS_HOST: "nextgen-redis-service"
+  REDIS_PORT: "6379"
+  ELASTICSEARCH_NODE: "http://nextgen-elasticsearch-service:9200"
+  KAFKA_BROKERS: "nextgen-kafka-service:9092"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nextgen-secret
+  namespace: instagram
+type: Opaque
+data:
+  # Base64 encoded: postgresql://postgres:instagram_secure_pass_2026@nextgen-postgres-service:5432/instagram_clone?schema=public
+  DATABASE_URL: cG9zdGdyZXNxbDovL3Bvc3RncmVzOmluc3RhZ3JhbV9zZWN1cmVfcGFzc18yMDI2QG5leHRnZW4tcG9zdGdyZXMtc2VydmljZTo1NDMyL2luc3RhZ3JhbV9jbG9uZT9zY2hlbWE9cHVibGlj
+  JWT_SECRET: c3VwZXJfc2VjcmV0X2p3dF9rZXlfZm9yX2luc3RhZ3JhbV8yMDI2
+---
+# Backend Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextgen-backend
+  namespace: instagram
+  labels:
+    app: nextgen-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nextgen-backend
+  template:
+    metadata:
+      labels:
+        app: nextgen-backend
+    spec:
+      containers:
+      - name: backend
+        image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/nextgen-backend:latest
+        ports:
+        - containerPort: 4000
+        envFrom:
+        - configMapRef:
+            name: nextgen-config
+        - secretRef:
+            name: nextgen-secret
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1024Mi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+# Backend Cluster IP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextgen-backend-service
+  namespace: instagram
+spec:
+  type: ClusterIP
+  selector:
+    app: nextgen-backend
+  ports:
+  - port: 4000
+    targetPort: 4000
+---
+# Frontend Web App Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextgen-frontend
+  namespace: instagram
+  labels:
+    app: nextgen-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nextgen-frontend
+  template:
+    metadata:
+      labels:
+        app: nextgen-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/nextgen-frontend:latest
+        ports:
+        - containerPort: 3000
+        resources:
+          limits:
+            cpu: "500m"
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+---
+# Frontend LoadBalancer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextgen-frontend-service
+  namespace: instagram
+spec:
+  type: LoadBalancer
+  selector:
+    app: nextgen-frontend
+  ports:
+  - port: 80
+    targetPort: 3000
+---
+# Horizontal Pod Autoscaler (Scalability rule)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nextgen-backend-hpa
+  namespace: instagram
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nextgen-backend
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75

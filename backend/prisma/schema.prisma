@@ -1,0 +1,90 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  username      String    @unique
+  email         String?   @unique
+  phone         String?   @unique
+  passwordHash  String
+  fullName      String?
+  bio           String?
+  profilePicUrl String?
+  isVerified    Boolean   @default(false)
+  accountType   String    @default("PERSONAL") // PERSONAL, CREATOR, BUSINESS
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  posts         Post[]
+  comments      Comment[]
+  stories       Story[]
+  notes         Note?
+  followers     Follows[] @relation("FollowingUsers")
+  following     Follows[] @relation("FollowerUsers")
+}
+
+model Follows {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("FollowerUsers", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowingUsers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+}
+
+model Post {
+  id        String    @id @default(uuid())
+  userId    String
+  caption   String?
+  location  String?
+  mediaUrls String[]
+  postType  String    @default("POST") // POST, REEL
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  author    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  postId    String
+  userId    String
+  content   String
+  parentId  String?
+  createdAt DateTime  @default(now())
+
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+}
+
+model Story {
+  id         String   @id @default(uuid())
+  userId     String
+  mediaUrl   String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  author     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  content   String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  author    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
